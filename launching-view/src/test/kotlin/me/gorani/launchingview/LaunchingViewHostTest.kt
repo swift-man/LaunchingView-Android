@@ -1,7 +1,9 @@
 package me.gorani.launchingview
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -10,6 +12,7 @@ import androidx.compose.ui.test.performClick
 import androidx.lifecycle.Lifecycle
 import java.net.URI
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
 import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.LaunchingServiceClient
 import me.gorani.launchingservice.NoticeAlert
@@ -23,6 +26,11 @@ import org.robolectric.RobolectricTestRunner
 /**
  * Compose-layer wiring of `LaunchingHost`: lifecycle driven fetches and saved-state restoration.
  * The reducer itself is covered by [LaunchingReducerTest].
+ *
+ * [rotate] re-creates the Activity through `ActivityScenario.recreate()`, which sets
+ * `isChangingConfigurations` before pausing like a real configuration change. [StateRestorationTester]
+ * saves and restores without lifecycle callbacks, which is what a restore after process death or
+ * after the Activity was destroyed in the background looks like to the host.
  */
 @RunWith(RobolectricTestRunner::class)
 class LaunchingViewHostTest {
@@ -43,7 +51,7 @@ class LaunchingViewHostTest {
   fun `first display fetches once and shows content for a valid policy`() {
     val service = CountingService { AppUpdateStatus.Valid }
 
-    composeRule.setContent { LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service) }
+    composeRule.setContent { launchingView(service) }
 
     composeRule.waitUntil { service.fetchCount.get() == 1 }
     composeRule.onNodeWithText("content").assertIsDisplayed()
@@ -53,7 +61,7 @@ class LaunchingViewHostTest {
   @Test
   fun `returning to the foreground fetches again`() {
     val service = CountingService { AppUpdateStatus.Valid }
-    composeRule.setContent { LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service) }
+    composeRule.setContent { launchingView(service) }
     composeRule.waitUntil { service.fetchCount.get() == 1 }
 
     composeRule.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
@@ -64,14 +72,14 @@ class LaunchingViewHostTest {
   }
 
   @Test
-  fun `re-creation in the same process keeps the blocking screen without fetching again`() {
+  fun `rotation keeps the blocking screen without fetching again`() {
     val service = CountingService { forced }
-    val restorationTester = StateRestorationTester(composeRule)
-    restorationTester.setContent { AsyncLaunchingView(content = { Text("content") }, service = service) }
+    val ui: @Composable () -> Unit = { AsyncLaunchingView(content = { Text("content") }, service = service) }
+    composeRule.setContent(ui)
     composeRule.waitUntil { service.fetchCount.get() == 1 }
     composeRule.onNodeWithText("Force update").assertIsDisplayed()
 
-    restorationTester.emulateSavedInstanceStateRestore()
+    rotate(ui)
 
     composeRule.onNodeWithText("Force update").assertIsDisplayed()
     composeRule.onNodeWithText("content").assertDoesNotExist()
@@ -80,16 +88,31 @@ class LaunchingViewHostTest {
   }
 
   @Test
-  fun `re-creation does not reshow a dismissed optional update dialog`() {
+  fun `rotation keeps an optional update dialog the user has not dismissed`() {
     val service = CountingService { optional }
-    val restorationTester = StateRestorationTester(composeRule)
-    restorationTester.setContent { LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service) }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
     composeRule.waitUntil { service.fetchCount.get() == 1 }
     composeRule.onNodeWithText("Optional update").assertIsDisplayed()
+
+    rotate(ui)
+
+    composeRule.onNodeWithText("Optional update").assertIsDisplayed()
+    composeRule.onNodeWithText("content").assertIsDisplayed()
+    composeRule.waitForIdle()
+    assertEquals(1, service.fetchCount.get())
+  }
+
+  @Test
+  fun `rotation does not reshow a dismissed optional update dialog`() {
+    val service = CountingService { optional }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
+    composeRule.waitUntil { service.fetchCount.get() == 1 }
     composeRule.onNodeWithText("cancel").performClick()
     composeRule.onNodeWithText("Optional update").assertDoesNotExist()
 
-    restorationTester.emulateSavedInstanceStateRestore()
+    rotate(ui)
 
     composeRule.onNodeWithText("content").assertIsDisplayed()
     composeRule.onNodeWithText("Optional update").assertDoesNotExist()
@@ -99,14 +122,14 @@ class LaunchingViewHostTest {
   }
 
   @Test
-  fun `re-creation does not reshow a dismissed notice dialog`() {
+  fun `rotation does not reshow a dismissed notice dialog`() {
     val service = CountingService { notice }
-    val restorationTester = StateRestorationTester(composeRule)
-    restorationTester.setContent { LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service) }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
     composeRule.waitUntil { service.fetchCount.get() == 1 }
     composeRule.onNodeWithText("done").performClick()
 
-    restorationTester.emulateSavedInstanceStateRestore()
+    rotate(ui)
 
     composeRule.onNodeWithText("content").assertIsDisplayed()
     composeRule.onNodeWithText("Notice").assertDoesNotExist()
@@ -115,26 +138,95 @@ class LaunchingViewHostTest {
   }
 
   @Test
-  fun `restore after process death keeps the policy and fetches like a cold launch`() {
-    val service = CountingService { forced }
+  fun `a foreground return that re-creates the activity fetches and applies the new policy`() {
+    var status: AppUpdateStatus = AppUpdateStatus.Valid
+    val service = CountingService { status }
     val restorationTester = StateRestorationTester(composeRule)
-    restorationTester.setContent { AsyncLaunchingView(content = { Text("content") }, service = service) }
+    restorationTester.setContent { launchingView(service) }
     composeRule.waitUntil { service.fetchCount.get() == 1 }
 
-    ProcessIdentity.token = "next-process"
-    restorationTester.emulateSavedInstanceStateRestore()
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED) // user leaves
+    status = forced // a forced update is published while the user is away
+    restorationTester.emulateSavedInstanceStateRestore() // locale or dark mode changed: re-created on return
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED) // user returns
 
+    composeRule.waitUntil { service.fetchCount.get() == 2 }
     composeRule.onNodeWithText("Force update").assertIsDisplayed()
     composeRule.onNodeWithText("content").assertDoesNotExist()
-    composeRule.waitUntil { service.fetchCount.get() == 2 }
   }
 
-  private class CountingService(private val status: () -> AppUpdateStatus) : LaunchingServiceClient {
+  @Test
+  fun `rotation during an in-flight refetch fetches again`() {
+    val gate = CompletableDeferred<AppUpdateStatus>()
+    val service = CountingService { count -> if (count == 2) gate.await() else if (count == 1) AppUpdateStatus.Valid else forced }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
+    composeRule.waitUntil { service.fetchCount.get() == 1 }
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+    composeRule.waitUntil { service.fetchCount.get() == 2 } // foreground refetch in flight
+
+    rotate(ui)
+
+    composeRule.waitUntil { service.fetchCount.get() == 3 }
+    composeRule.onNodeWithText("Force update").assertIsDisplayed()
+  }
+
+  @Test
+  fun `rotation while the fetch error dialog is shown fetches again instead of restoring the dialog`() {
+    val service = CountingService { count -> if (count == 1) throw IllegalStateException("offline") else AppUpdateStatus.Valid }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
+    composeRule.waitUntil { service.fetchCount.get() == 1 }
+    composeRule.onNodeWithText("offline").assertIsDisplayed()
+
+    rotate(ui)
+
+    composeRule.waitUntil { service.fetchCount.get() == 2 }
+    composeRule.onNodeWithText("offline").assertDoesNotExist()
+    composeRule.onNodeWithText("content").assertIsDisplayed()
+  }
+
+  @Test
+  fun `rotation after being re-created in the background does not reshow the dismissed dialog`() {
+    val service = CountingService { optional }
+    val ui: @Composable () -> Unit = { launchingView(service) }
+    composeRule.setContent(ui)
+    composeRule.waitUntil { service.fetchCount.get() == 1 }
+
+    // Destroyed while the user is away (memory pressure, "Don't keep activities"): the pause that
+    // preceded it was not a configuration change, so the return fetches like a cold launch.
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+    composeRule.activityRule.scenario.recreate()
+    composeRule.activityRule.scenario.onActivity { activity -> activity.setContent(content = ui) }
+    composeRule.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+    composeRule.waitUntil { service.fetchCount.get() == 2 }
+    composeRule.onNodeWithText("cancel").performClick()
+    composeRule.onNodeWithText("Optional update").assertDoesNotExist()
+
+    rotate(ui) // plain rotation afterwards
+
+    composeRule.onNodeWithText("content").assertIsDisplayed()
+    composeRule.onNodeWithText("Optional update").assertDoesNotExist()
+    composeRule.waitForIdle()
+    assertEquals(2, service.fetchCount.get())
+  }
+
+  @Composable
+  private fun launchingView(service: LaunchingServiceClient) {
+    LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service)
+  }
+
+  /** Re-creates the Activity like a configuration change and sets the same content on the new instance. */
+  private fun rotate(ui: @Composable () -> Unit) {
+    composeRule.activityRule.scenario.recreate()
+    composeRule.activityRule.scenario.onActivity { activity -> activity.setContent(content = ui) }
+    composeRule.waitForIdle()
+  }
+
+  private class CountingService(private val status: suspend (count: Int) -> AppUpdateStatus) : LaunchingServiceClient {
     val fetchCount = AtomicInteger()
 
-    override suspend fun fetchAppUpdateStatus(): AppUpdateStatus {
-      fetchCount.incrementAndGet()
-      return status()
-    }
+    override suspend fun fetchAppUpdateStatus(): AppUpdateStatus = status(fetchCount.incrementAndGet())
   }
 }

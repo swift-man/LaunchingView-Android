@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Activity re-creation in the same process (rotation, locale or dark-mode change) no longer reshows a dismissed optional-update or notice dialog and no longer fetches the launch policy again; a restore after process death still fetches like a cold launch.
+- Re-creating a foreground Activity (rotation, in-app theme change) restores the last policy and the dialogs that were open, no longer reshows a dismissed dialog, and no longer fetches again unless a fetch was running or had failed. An Activity re-created on a foreground return or after process death still fetches.
 - The Release workflow fails at its first step with a clear error when any Maven Central or signing secret is missing, and can be re-run manually with `workflow_dispatch`.
 
 ### Added

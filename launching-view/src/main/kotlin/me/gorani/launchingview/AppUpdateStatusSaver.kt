@@ -1,27 +1,19 @@
 package me.gorani.launchingview
 
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.listSaver
 import java.net.URI
 import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.NoticeAlert
 import me.gorani.launchingservice.UpdateAlert
 
 /**
- * Keeps the last fetched launch policy across Activity re-creation (rotation, locale or dark-mode
- * changes) so a blocked user is not shown the content, and a valid user is not shown the launch
- * screen again, while the `ON_RESUME` refetch is still running.
+ * Bundle-friendly encoding of an [AppUpdateStatus] used by [LaunchingSnapshotSaver].
  *
- * Saved state is written at `onSaveInstanceState`, so a policy that arrives later is lost if the
- * process is killed; the restored policy is then the last saved one until the refetch finishes.
+ * The result always has [SAVED_STATUS_SIZE] entries (kind, title, message, URI, terminateOnDismiss)
+ * so it can be concatenated with other saved values; a `null` status is encoded with an empty kind.
  */
-internal val AppUpdateStatusSaver: Saver<AppUpdateStatus?, Any> = listSaver(
-  save = { status -> status?.toSavedValues() ?: emptyList() },
-  restore = { values -> restoreAppUpdateStatus(values) },
-)
-
-internal fun AppUpdateStatus.toSavedValues(): List<Any> = when (this) {
-  AppUpdateStatus.Valid -> listOf(KIND_VALID)
+internal fun AppUpdateStatus?.toSavedValues(): List<Any> = when (this) {
+  null -> listOf(KIND_NONE, "", "", "", false)
+  AppUpdateStatus.Valid -> listOf(KIND_VALID, "", "", "", false)
   is AppUpdateStatus.ForcedUpdateRequired ->
     listOf(KIND_FORCED, alert.title, alert.message, alert.doneUri.toString(), false)
   is AppUpdateStatus.OptionalUpdateRequired ->
@@ -30,16 +22,17 @@ internal fun AppUpdateStatus.toSavedValues(): List<Any> = when (this) {
     listOf(KIND_NOTICE, alert.title, alert.message, alert.doneUri?.toString() ?: "", alert.terminateOnDismiss)
 }
 
+/** Inverse of [toSavedValues]; returns `null` for no status and for unknown or malformed values. */
 internal fun restoreAppUpdateStatus(values: List<Any?>): AppUpdateStatus? {
-  val kind = values.getOrNull(0) as? String ?: return null
-  if (kind == KIND_VALID) return AppUpdateStatus.Valid
-
-  val title = values.getOrNull(1) as? String ?: return null
-  val message = values.getOrNull(2) as? String ?: return null
-  val uri = values.getOrNull(3) as? String ?: return null
-  val terminateOnDismiss = values.getOrNull(4) as? Boolean ?: return null
+  if (values.size != SAVED_STATUS_SIZE) return null
+  val kind = values[0] as? String ?: return null
+  val title = values[1] as? String ?: return null
+  val message = values[2] as? String ?: return null
+  val uri = values[3] as? String ?: return null
+  val terminateOnDismiss = values[4] as? Boolean ?: return null
 
   return when (kind) {
+    KIND_VALID -> AppUpdateStatus.Valid
     KIND_FORCED -> AppUpdateStatus.ForcedUpdateRequired(UpdateAlert(title, message, parseUri(uri) ?: return null))
     KIND_OPTIONAL -> AppUpdateStatus.OptionalUpdateRequired(UpdateAlert(title, message, parseUri(uri) ?: return null))
     KIND_NOTICE -> AppUpdateStatus.Notice(NoticeAlert(title, message, terminateOnDismiss, parseUri(uri)))
@@ -47,9 +40,12 @@ internal fun restoreAppUpdateStatus(values: List<Any?>): AppUpdateStatus? {
   }
 }
 
+internal const val SAVED_STATUS_SIZE = 5
+
 private fun parseUri(value: String): URI? =
   if (value.isEmpty()) null else runCatching { URI(value) }.getOrNull()
 
+private const val KIND_NONE = ""
 private const val KIND_VALID = "valid"
 private const val KIND_FORCED = "forced"
 private const val KIND_OPTIONAL = "optional"

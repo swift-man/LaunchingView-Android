@@ -47,11 +47,17 @@ internal class LaunchingReducer(
   /**
    * State to start from when [status] was restored from saved state after Activity re-creation.
    *
-   * The blocking screen and content visibility come back; the optional-update and notice dialogs
-   * do not, because the user may already have dismissed them before the configuration change.
+   * The blocking screen and content visibility always come back. The optional-update and notice
+   * dialogs come back only when they were still visible when the state was saved, so a dialog the
+   * user had dismissed stays dismissed and one they had not stays open, as it does on iOS.
    */
-  fun restore(status: AppUpdateStatus): LaunchingState =
-    apply(LaunchingState(), status).copy(optionalUpdateAlert = null, noticeAlert = null)
+  fun restore(status: AppUpdateStatus, optionalDialogVisible: Boolean, noticeDialogVisible: Boolean): LaunchingState {
+    val state = apply(LaunchingState(), status)
+    return state.copy(
+      optionalUpdateAlert = state.optionalUpdateAlert.takeIf { optionalDialogVisible },
+      noticeAlert = state.noticeAlert.takeIf { noticeDialogVisible },
+    )
+  }
 
   private fun requestFetch(state: LaunchingState): LaunchingTransition =
     if (state.isFetching) {

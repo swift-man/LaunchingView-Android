@@ -8,15 +8,17 @@ import org.junit.Test
 class ResumeGateTest {
   @Test
   fun `fresh start fetches on every resume`() {
-    val gate = ResumeGate.forRestore(restoredStatus = null, savedProcessToken = "a", currentProcessToken = "a")
+    val gate = ResumeGate.forRestore(LaunchingSnapshot())
 
     assertTrue(gate.shouldFetch())
     assertTrue(gate.shouldFetch())
   }
 
   @Test
-  fun `re-creation in the same process skips only the first resume`() {
-    val gate = ResumeGate.forRestore(AppUpdateStatus.Valid, savedProcessToken = "a", currentProcessToken = "a")
+  fun `re-creation of a foreground activity skips only the first resume`() {
+    val gate = ResumeGate.forRestore(
+      LaunchingSnapshot(status = AppUpdateStatus.Valid, changingConfigurations = true),
+    )
 
     assertFalse(gate.shouldFetch())
     assertTrue(gate.shouldFetch())
@@ -24,15 +26,26 @@ class ResumeGateTest {
   }
 
   @Test
-  fun `restore after process death fetches like a cold launch`() {
-    val gate = ResumeGate.forRestore(AppUpdateStatus.Valid, savedProcessToken = "old", currentProcessToken = "new")
+  fun `re-creation of a stopped activity or after process death fetches`() {
+    val gate = ResumeGate.forRestore(
+      LaunchingSnapshot(status = AppUpdateStatus.Valid, changingConfigurations = false),
+    )
 
     assertTrue(gate.shouldFetch())
   }
 
   @Test
-  fun `saved token without a saved status fetches`() {
-    val gate = ResumeGate.forRestore(restoredStatus = null, savedProcessToken = "a", currentProcessToken = "a")
+  fun `re-creation that cancelled a running queued or failed fetch fetches again`() {
+    val gate = ResumeGate.forRestore(
+      LaunchingSnapshot(status = AppUpdateStatus.Valid, refetchNeeded = true, changingConfigurations = true),
+    )
+
+    assertTrue(gate.shouldFetch())
+  }
+
+  @Test
+  fun `re-creation before any policy arrived fetches`() {
+    val gate = ResumeGate.forRestore(LaunchingSnapshot(status = null, changingConfigurations = true))
 
     assertTrue(gate.shouldFetch())
   }

@@ -1,24 +1,20 @@
 package me.gorani.launchingview
 
 import android.net.Uri
+import androidx.activity.compose.LocalActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.LaunchingServiceClient
 
 /**
@@ -26,8 +22,10 @@ import me.gorani.launchingservice.LaunchingServiceClient
  *
  * Behavior mirrors the iOS `LaunchingView`:
  * - The policy is fetched through [service] on the first display and on every foreground return.
- *   An Activity re-creation in the same process (rotation, locale or dark-mode change) restores the
- *   last policy without fetching again; a restore after process death fetches like a cold launch.
+ *   Re-creating a foreground Activity (rotation, in-app theme change) restores the last policy and
+ *   the dialogs that were open without fetching again, unless a fetch was running or had failed.
+ *   An Activity re-created after being stopped, destroyed in the background, or after process
+ *   death restores the policy and fetches again.
  * - `Valid` shows [content] once [isFinished] is also true; otherwise [launchScreen] stays.
  * - `OptionalUpdateRequired` shows [content] under a cancel/update dialog.
  * - `ForcedUpdateRequired` and terminating `Notice` replace everything with the blocking launch screen.
@@ -121,18 +119,14 @@ private fun LaunchingHost(
   val currentService by rememberUpdatedState(service)
   val currentDefaultText by rememberUpdatedState(defaultText)
   val currentOnOpenUri by rememberUpdatedState(onOpenUri)
-  // The last fetched policy survives Activity re-creation so a blocked user never sees the content
-  // and a valid user never sees the launch screen again. The process token tells a re-creation in
-  // the same process (no refetch, like iOS which never re-creates) from a restore after process
-  // death (fetches like a cold launch).
-  var savedStatus by rememberSaveable(stateSaver = AppUpdateStatusSaver) {
-    mutableStateOf<AppUpdateStatus?>(null)
+  // The screen the user was looking at survives Activity re-creation (see LaunchingSnapshot). The
+  // store writes the snapshot synchronously on every transition, so saved instance state is never
+  // behind the store; ON_PAUSE adds whether the re-creation replaces a foreground Activity.
+  val snapshotState = rememberSaveable(stateSaver = LaunchingSnapshotSaver) {
+    mutableStateOf(LaunchingSnapshot())
   }
-  val savedProcessToken = rememberSaveable { ProcessIdentity.token }
-  val restoredStatus = remember { savedStatus }
-  val resumeGate = remember {
-    ResumeGate.forRestore(restoredStatus, savedProcessToken, ProcessIdentity.token)
-  }
+  val restored = remember { snapshotState.value }
+  val resumeGate = remember { ResumeGate.forRestore(restored) }
   // Created once: changing defaultText or service must not reset an already fetched launch policy.
   val store = remember {
     val reducer = LaunchingReducer({ currentDefaultText }, { appName })
@@ -141,22 +135,29 @@ private fun LaunchingHost(
       scope = scope,
       service = { currentService },
       openUri = { uri -> currentOnOpenUri(Uri.parse(uri.toString())) },
-      initialState = restoredStatus?.let(reducer::restore) ?: LaunchingState(),
+      initialState = restored.status
+        ?.let { reducer.restore(it, restored.optionalDialogVisible, restored.noticeDialogVisible) }
+        ?: LaunchingState(),
+      onStateChanged = { newState ->
+        snapshotState.value = LaunchingSnapshot.of(newState, snapshotState.value.changingConfigurations)
+      },
     )
   }
   val state by store.state.collectAsStateWithLifecycle()
-  // Mirrors the store into saved state while composed, independent of the lifecycle-gated `state`.
-  // Values that change after onSaveInstanceState are not persisted: after process death the last
-  // saved policy is shown until the ON_RESUME refetch corrects it.
-  LaunchedEffect(store) {
-    store.state.map { it.appUpdateStatus }.distinctUntilChanged().collect { savedStatus = it }
-  }
 
+  val activity = LocalActivity.current
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner, store) {
+    // The restored flag has been consumed by the gate; ON_PAUSE sets it again before any save.
+    snapshotState.value = snapshotState.value.copy(changingConfigurations = false)
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_RESUME && resumeGate.shouldFetch()) {
-        store.send(LaunchingAction.FetchRequested)
+      when (event) {
+        Lifecycle.Event.ON_RESUME -> if (resumeGate.shouldFetch()) store.send(LaunchingAction.FetchRequested)
+        // Captured at ON_PAUSE because on API < 28 the state is saved before ON_STOP.
+        Lifecycle.Event.ON_PAUSE -> snapshotState.value = snapshotState.value.copy(
+          changingConfigurations = activity?.isChangingConfigurations == true,
+        )
+        else -> Unit
       }
     }
     lifecycleOwner.lifecycle.addObserver(observer)

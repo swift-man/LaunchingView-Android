@@ -12,6 +12,7 @@ class AppUpdateStatusSaverTest {
   @Test
   fun `every status survives a save and restore round trip`() {
     val statuses = listOf(
+      null,
       AppUpdateStatus.Valid,
       AppUpdateStatus.ForcedUpdateRequired(UpdateAlert("Force", "Now", URI("https://example.com/force"))),
       AppUpdateStatus.OptionalUpdateRequired(UpdateAlert("", "", URI("market://details?id=app"))),
@@ -20,6 +21,7 @@ class AppUpdateStatusSaverTest {
     )
 
     statuses.forEach { status ->
+      assertEquals(SAVED_STATUS_SIZE, status.toSavedValues().size)
       assertEquals(status, restoreAppUpdateStatus(status.toSavedValues()))
     }
   }
@@ -41,5 +43,6 @@ class AppUpdateStatusSaverTest {
     assertNull(restoreAppUpdateStatus(listOf("unknown", "t", "m", "", false)))
     assertNull(restoreAppUpdateStatus(listOf("forced", "t", "m", "", false)))
     assertNull(restoreAppUpdateStatus(listOf("forced", "t")))
+    assertNull(restoreAppUpdateStatus(listOf("valid", "", "", "", "not-a-boolean")))
   }
 }
