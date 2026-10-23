@@ -146,7 +146,7 @@ LaunchingView(
 | 에러 alert 의 시스템 "OK" 버튼 | `LaunchingAlertDefaultText.FetchError.done` | Android 에는 시스템 기본 버튼이 없어 문구를 노출 |
 | `@Dependency(\.openURL)` | `onOpenUri: (Uri) -> Unit` | 기본값은 `ACTION_VIEW` 인텐트 |
 | `isFinished: Binding<Bool>` | `isFinished: Boolean` | Compose 상태를 그대로 넘김 |
-| SwiftUI `@State` (구성 변경 없음) | `rememberSaveable` 로 마지막 `AppUpdateStatus` 복원 | 회전·언어·다크 모드 전환으로 Activity 가 재생성돼도 차단 화면과 본문이 유지되고, 이어서 `ON_RESUME` 재조회 |
+| SwiftUI `@State` (구성 변경 없음) | `rememberSaveable` 로 마지막 `AppUpdateStatus` 복원 | 회전·언어·다크 모드 전환으로 Activity 가 재생성돼도 차단 화면과 본문이 유지되고, 이어서 `ON_RESUME` 재조회. 저장은 `onSaveInstanceState` 시점이므로 그 뒤에 도착한 정책은 프로세스 종료 시 유실되고 재조회로 교정됨 |
 | `LaunchingAlertDefaultText.Notice.cancel` | 없음 | 공지 다이얼로그와 차단 화면 모두 버튼이 하나뿐이라 노출하지 않음 |
 
 Remote Config 키와 판정 규칙은 [LaunchingService Android README](https://github.com/swift-man/LaunchingService-Android#remote-config) 를 참고하세요.

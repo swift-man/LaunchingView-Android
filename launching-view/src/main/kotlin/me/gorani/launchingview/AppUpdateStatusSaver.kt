@@ -11,6 +11,9 @@ import me.gorani.launchingservice.UpdateAlert
  * Keeps the last fetched launch policy across Activity re-creation (rotation, locale or dark-mode
  * changes) so a blocked user is not shown the content, and a valid user is not shown the launch
  * screen again, while the `ON_RESUME` refetch is still running.
+ *
+ * Saved state is written at `onSaveInstanceState`, so a policy that arrives later is lost if the
+ * process is killed; the restored policy is then the last saved one until the refetch finishes.
  */
 internal val AppUpdateStatusSaver: Saver<AppUpdateStatus?, Any> = listSaver(
   save = { status -> status?.toSavedValues() ?: emptyList() },

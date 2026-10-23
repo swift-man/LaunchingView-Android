@@ -138,8 +138,9 @@ private fun LaunchingHost(
     )
   }
   val state by store.state.collectAsStateWithLifecycle()
-  // Subscribed to the store directly, not to the lifecycle-gated `state`, so a fetch that finishes
-  // after onStop still updates the saved policy before the process may be killed.
+  // Mirrors the store into saved state while composed, independent of the lifecycle-gated `state`.
+  // Values that change after onSaveInstanceState are not persisted: after process death the last
+  // saved policy is shown until the ON_RESUME refetch corrects it.
   LaunchedEffect(store) {
     store.state.map { it.appUpdateStatus }.distinctUntilChanged().collect { savedStatus = it }
   }
