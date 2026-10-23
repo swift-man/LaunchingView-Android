@@ -3,15 +3,20 @@ package me.gorani.launchingview
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.LaunchingServiceClient
 
 /**
@@ -112,16 +117,26 @@ private fun LaunchingHost(
   val currentService by rememberUpdatedState(service)
   val currentDefaultText by rememberUpdatedState(defaultText)
   val currentOnOpenUri by rememberUpdatedState(onOpenUri)
+  // The last fetched policy survives Activity re-creation so a blocked user never sees the content
+  // and a valid user never sees the launch screen again while the ON_RESUME refetch runs.
+  var savedStatus by rememberSaveable(stateSaver = AppUpdateStatusSaver) {
+    mutableStateOf<AppUpdateStatus?>(null)
+  }
   // Created once: changing defaultText or service must not reset an already fetched launch policy.
   val store = remember {
+    val reducer = LaunchingReducer({ currentDefaultText }, { appName })
     LaunchingStore(
-      reducer = LaunchingReducer({ currentDefaultText }, { appName }),
+      reducer = reducer,
       scope = scope,
       service = { currentService },
       openUri = { uri -> currentOnOpenUri(Uri.parse(uri.toString())) },
+      initialState = savedStatus
+        ?.let { reducer.reduce(LaunchingState(), LaunchingAction.StatusReceived(it)).state }
+        ?: LaunchingState(),
     )
   }
   val state by store.state.collectAsStateWithLifecycle()
+  LaunchedEffect(state.appUpdateStatus) { savedStatus = state.appUpdateStatus }
 
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner, store) {

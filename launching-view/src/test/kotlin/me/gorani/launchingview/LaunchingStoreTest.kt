@@ -130,6 +130,34 @@ class LaunchingStoreTest {
   }
 
   @Test
+  fun `restored forced status keeps the blocking screen while the refetch runs`() = runTest {
+    val forced = AppUpdateStatus.ForcedUpdateRequired(UpdateAlert("Force", "Now", URI("https://example.com/force")))
+    val gate = CompletableDeferred<AppUpdateStatus>()
+    val restored = reducer.reduce(LaunchingState(), LaunchingAction.StatusReceived(forced)).state
+    val store = LaunchingStore(
+      reducer = reducer,
+      scope = this,
+      service = { LaunchingServiceClient { gate.await() } },
+      openUri = {},
+      initialState = restored,
+    )
+
+    assertFalse(store.state.value.displayContentView)
+    store.send(LaunchingAction.FetchRequested)
+    runCurrent()
+
+    assertTrue(store.state.value.isFetching)
+    assertEquals(restored.blockingAlert, store.state.value.blockingAlert)
+    assertFalse(store.state.value.displayContentView)
+
+    gate.complete(AppUpdateStatus.Valid)
+    advanceUntilIdle()
+
+    assertTrue(store.state.value.displayContentView)
+    assertEquals(null, store.state.value.blockingAlert)
+  }
+
+  @Test
   fun `open uri effects reach the opener`() = runTest {
     val opened = mutableListOf<URI>()
     val uri = URI("https://example.com/force")

@@ -28,3 +28,6 @@ jobs:
         run: ./gradlew assembleDebug
       - name: Verify local publication
         run: ./gradlew :launching-view:publishToMavenLocal
+
+      - name: Dokka
+        run: ./gradlew :launching-view:dokkaGeneratePublicationHtml
