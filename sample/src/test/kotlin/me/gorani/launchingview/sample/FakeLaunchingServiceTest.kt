@@ -24,8 +24,26 @@ class FakeLaunchingServiceTest {
   }
 
   @Test
-  fun `fetch error scenario throws`() = runTest {
+  fun `fetch error scenario throws once and then recovers`() = runTest {
     val service = FakeLaunchingService({ LaunchScenario.FETCH_ERROR }, latencyMillis = 0L)
+
+    try {
+      service.fetchAppUpdateStatus()
+      fail("Expected IllegalStateException")
+    } catch (_: IllegalStateException) {
+      // Expected.
+    }
+
+    assertEquals(AppUpdateStatus.Valid, service.fetchAppUpdateStatus())
+  }
+
+  @Test
+  fun `reset arms the fetch error scenario again`() = runTest {
+    val service = FakeLaunchingService({ LaunchScenario.FETCH_ERROR }, latencyMillis = 0L)
+    runCatching { service.fetchAppUpdateStatus() }
+    assertEquals(AppUpdateStatus.Valid, service.fetchAppUpdateStatus())
+
+    service.reset()
 
     try {
       service.fetchAppUpdateStatus()

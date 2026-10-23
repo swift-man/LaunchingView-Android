@@ -27,11 +27,14 @@ public data class LaunchingAlertDefaultText(
     val done: String = "update",
   )
 
-  /** Text for the notice dialog and the terminating notice screen. */
+  /**
+   * Text for the notice dialog and the terminating notice screen.
+   *
+   * Both have a single button, so unlike iOS there is no `cancel` text.
+   */
   public data class Notice(
     val title: String = "",
     val message: String = "",
-    val cancel: String = "cancel",
     val done: String = "done",
   )
 

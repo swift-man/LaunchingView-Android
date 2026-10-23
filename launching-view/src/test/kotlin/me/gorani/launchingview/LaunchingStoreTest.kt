@@ -3,13 +3,19 @@ package me.gorani.launchingview
 import java.net.URI
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.LaunchingServiceClient
 import me.gorani.launchingservice.UpdateAlert
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -44,13 +50,62 @@ class LaunchingStoreTest {
   }
 
   @Test
-  fun `cancelled fetch clears fetching without an alert`() = runTest {
-    val store = store(LaunchingServiceClient { throw CancellationException("cancelled") })
+  fun `cancelled scope clears fetching without an alert`() = runTest {
+    val scope = CoroutineScope(coroutineContext + Job())
+    val store = LaunchingStore(
+      reducer = reducer,
+      scope = scope,
+      service = { LaunchingServiceClient { awaitCancellation() } },
+      openUri = {},
+    )
+
+    store.send(LaunchingAction.FetchRequested)
+    runCurrent()
+    assertTrue(store.state.value.isFetching)
+
+    scope.cancel()
+    advanceUntilIdle()
+
+    assertEquals(LaunchingState(), store.state.value)
+  }
+
+  @Test
+  fun `cancellation thrown by the service while the scope is active is a failed fetch`() = runTest {
+    val store = store(LaunchingServiceClient { throw CancellationException("Firebase task cancelled") })
 
     store.send(LaunchingAction.FetchRequested)
     advanceUntilIdle()
 
-    assertEquals(LaunchingState(), store.state.value)
+    assertEquals(
+      LaunchingState.FetchErrorAlert("Sample App", "Firebase task cancelled", "done"),
+      store.state.value.fetchErrorAlert,
+    )
+    assertFalse(store.state.value.isFetching)
+  }
+
+  @Test
+  fun `changing default text keeps the fetched policy and applies to the next fetch`() = runTest {
+    var defaultText = LaunchingAlertDefaultText(forceUpdate = LaunchingAlertDefaultText.ForceUpdate(done = "Update"))
+    val forced = AppUpdateStatus.ForcedUpdateRequired(UpdateAlert("", "", URI("https://example.com/force")))
+    val store = LaunchingStore(
+      reducer = LaunchingReducer({ defaultText }, { "Sample App" }),
+      scope = this,
+      service = { LaunchingServiceClient { forced } },
+      openUri = {},
+    )
+
+    store.send(LaunchingAction.FetchRequested)
+    advanceUntilIdle()
+    defaultText = LaunchingAlertDefaultText(forceUpdate = LaunchingAlertDefaultText.ForceUpdate(done = "업데이트"))
+
+    assertEquals("Update", store.state.value.blockingAlert?.buttonTitle)
+    assertFalse(store.state.value.displayContentView)
+
+    store.send(LaunchingAction.FetchRequested)
+    advanceUntilIdle()
+
+    assertEquals("업데이트", store.state.value.blockingAlert?.buttonTitle)
+    assertEquals(forced, store.state.value.appUpdateStatus)
   }
 
   @Test

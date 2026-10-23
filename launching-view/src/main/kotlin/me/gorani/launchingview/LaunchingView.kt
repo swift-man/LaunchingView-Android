@@ -107,13 +107,15 @@ private fun LaunchingHost(
   launchContent: @Composable (LaunchingState, LaunchingStore) -> Unit,
 ) {
   val context = LocalContext.current
-  val appName = remember(context) { context.applicationLabel() }
+  val appName by rememberUpdatedState(remember(context) { context.applicationLabel() })
   val scope = rememberCoroutineScope()
   val currentService by rememberUpdatedState(service)
+  val currentDefaultText by rememberUpdatedState(defaultText)
   val currentOnOpenUri by rememberUpdatedState(onOpenUri)
-  val store = remember(defaultText, appName) {
+  // Created once: changing defaultText or service must not reset an already fetched launch policy.
+  val store = remember {
     LaunchingStore(
-      reducer = LaunchingReducer(defaultText, appName),
+      reducer = LaunchingReducer({ currentDefaultText }, { appName }),
       scope = scope,
       service = { currentService },
       openUri = { uri -> currentOnOpenUri(Uri.parse(uri.toString())) },

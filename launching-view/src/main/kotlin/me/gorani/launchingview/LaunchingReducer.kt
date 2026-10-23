@@ -16,11 +16,22 @@ import me.gorani.launchingview.LaunchingAction.StatusReceived
  * Pure state machine ported branch by branch from the iOS `Launching` TCA reducer.
  *
  * Effects are returned instead of executed so the transitions can be verified with JVM unit tests.
+ * [defaultTextProvider] and [appNameProvider] are read on every action, so the owning store can
+ * live across default-text changes without resetting the launch policy it already fetched.
  */
 internal class LaunchingReducer(
-  private val defaultText: LaunchingAlertDefaultText,
-  private val appName: String,
+  private val defaultTextProvider: () -> LaunchingAlertDefaultText,
+  private val appNameProvider: () -> String,
 ) {
+  constructor(defaultText: LaunchingAlertDefaultText, appName: String) :
+    this({ defaultText }, { appName })
+
+  private val defaultText: LaunchingAlertDefaultText
+    get() = defaultTextProvider()
+
+  private val appName: String
+    get() = appNameProvider()
+
   fun reduce(state: LaunchingState, action: LaunchingAction): LaunchingTransition = when (action) {
     FetchRequested -> requestFetch(state)
     FetchCancelled -> finishFetch(state) { it }

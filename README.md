@@ -87,7 +87,7 @@ AsyncLaunchingView(
 
 ### 기본 문구 교체
 
-Remote Config 의 제목·메시지가 비어 있을 때 쓸 문구와 버튼 이름을 바꿀 수 있습니다. 제목을 비워 두면 앱 이름(`applicationInfo.loadLabel`)이 쓰입니다.
+Remote Config 의 제목·메시지가 비어 있을 때 쓸 문구와 버튼 이름을 바꿀 수 있습니다. 런타임에 바꿔도 이미 조회한 정책은 유지되고 다음 조회부터 새 문구가 쓰입니다. 제목을 비워 두면 앱 이름(`applicationInfo.loadLabel`)이 쓰입니다.
 
 ```kotlin
 LaunchingView(
@@ -133,7 +133,7 @@ LaunchingView(
 | `launchScreen.onAppear` → `fetchAppUpdateStatus` | `Lifecycle.Event.ON_RESUME` → `FetchRequested` | 옵저버 등록 시점에 이미 RESUMED 이면 즉시 한 번 전달되므로 첫 표시 조회를 겸함 |
 | `scenePhase == .active` 재조회 | 이후의 모든 `ON_RESUME` | 동일 |
 | `isFetching` 중 재요청 → `hasPendingFetch` | 동일 | 현재 조회가 끝난 뒤 한 번 더 조회 |
-| `fetchAppUpdateStatusCancelled` | `FetchCancelled` | `CancellationException` 일 때 알림 없이 정리 |
+| effect 취소 → `fetchAppUpdateStatusCancelled` | 코루틴 취소 → `FetchCancelled` | 알림 없이 정리. 서비스가 던진 `CancellationException` 은 코루틴이 살아 있으면 조회 실패로 처리 |
 | `.valid` | `Valid` | 본문 표시, 모든 알림 제거 |
 | `.forcedUpdateRequired` | `ForcedUpdateRequired` | `BlockingLaunchView`, 버튼 문구는 `forceUpdate.done` |
 | `.optionalUpdateRequired` | `OptionalUpdateRequired` | 본문 + 취소/업데이트 `AlertDialog`, 업데이트는 상태가 아직 optional 일 때만 링크 열기 |
@@ -146,6 +146,7 @@ LaunchingView(
 | 에러 alert 의 시스템 "OK" 버튼 | `LaunchingAlertDefaultText.FetchError.done` | Android 에는 시스템 기본 버튼이 없어 문구를 노출 |
 | `@Dependency(\.openURL)` | `onOpenUri: (Uri) -> Unit` | 기본값은 `ACTION_VIEW` 인텐트 |
 | `isFinished: Binding<Bool>` | `isFinished: Boolean` | Compose 상태를 그대로 넘김 |
+| `LaunchingAlertDefaultText.Notice.cancel` | 없음 | 공지 다이얼로그와 차단 화면 모두 버튼이 하나뿐이라 노출하지 않음 |
 
 Remote Config 키와 판정 규칙은 [LaunchingService Android README](https://github.com/swift-man/LaunchingService-Android#remote-config) 를 참고하세요.
 

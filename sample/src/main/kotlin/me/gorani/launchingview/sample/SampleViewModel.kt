@@ -11,10 +11,13 @@ class SampleViewModel : ViewModel() {
   private val mutableUiState = MutableStateFlow(SampleUiState())
   val uiState: StateFlow<SampleUiState> = mutableUiState.asStateFlow()
 
+  private val fakeLaunchingService = FakeLaunchingService({ mutableUiState.value.scenario })
+
   /** Stable service instance handed to `LaunchingView`; it reads the current scenario on every fetch. */
-  val launchingService: LaunchingServiceClient = FakeLaunchingService({ mutableUiState.value.scenario })
+  val launchingService: LaunchingServiceClient = fakeLaunchingService
 
   fun selectScenario(scenario: LaunchScenario) {
+    fakeLaunchingService.reset()
     mutableUiState.update { it.copy(scenario = scenario) }
   }
 

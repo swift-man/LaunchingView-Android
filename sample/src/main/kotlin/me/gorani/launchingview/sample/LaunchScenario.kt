@@ -12,10 +12,15 @@ enum class LaunchScenario(val label: String) {
   FORCED_UPDATE("강제 업데이트"),
   NOTICE("공지"),
   TERMINATING_NOTICE("종료형 공지"),
-  FETCH_ERROR("조회 실패"),
+  FETCH_ERROR("조회 실패 (첫 조회만)"),
   ;
 
-  /** The status a real `LaunchingService` would return for this scenario. */
+  /**
+   * The status a real `LaunchingService` would return for this scenario.
+   *
+   * [FETCH_ERROR] resolves to [AppUpdateStatus.Valid]; [FakeLaunchingService] throws on its first
+   * fetch of that scenario so the error dialog's retry can recover and the menu stays reachable.
+   */
   fun toStatus(): AppUpdateStatus = when (this) {
     VALID -> AppUpdateStatus.Valid
     OPTIONAL_UPDATE -> AppUpdateStatus.OptionalUpdateRequired(
@@ -30,7 +35,7 @@ enum class LaunchScenario(val label: String) {
     TERMINATING_NOTICE -> AppUpdateStatus.Notice(
       NoticeAlert("서비스 점검 중", "점검이 끝난 뒤 다시 이용해 주세요.", terminateOnDismiss = true, doneUri = NOTICE_URI),
     )
-    FETCH_ERROR -> throw IllegalStateException("Remote Config 를 불러오지 못했습니다.")
+    FETCH_ERROR -> AppUpdateStatus.Valid
   }
 
   private companion object {
