@@ -25,7 +25,9 @@ import me.gorani.launchingservice.LaunchingServiceClient
  * Launch gate that keeps [launchScreen] visible until the launch policy is known, then shows [content].
  *
  * Behavior mirrors the iOS `LaunchingView`:
- * - The policy is fetched through [service] when the view resumes, including the first display.
+ * - The policy is fetched through [service] on the first display and on every foreground return.
+ *   An Activity re-creation in the same process (rotation, locale or dark-mode change) restores the
+ *   last policy without fetching again; a restore after process death fetches like a cold launch.
  * - `Valid` shows [content] once [isFinished] is also true; otherwise [launchScreen] stays.
  * - `OptionalUpdateRequired` shows [content] under a cancel/update dialog.
  * - `ForcedUpdateRequired` and terminating `Notice` replace everything with the blocking launch screen.
@@ -120,9 +122,16 @@ private fun LaunchingHost(
   val currentDefaultText by rememberUpdatedState(defaultText)
   val currentOnOpenUri by rememberUpdatedState(onOpenUri)
   // The last fetched policy survives Activity re-creation so a blocked user never sees the content
-  // and a valid user never sees the launch screen again while the ON_RESUME refetch runs.
+  // and a valid user never sees the launch screen again. The process token tells a re-creation in
+  // the same process (no refetch, like iOS which never re-creates) from a restore after process
+  // death (fetches like a cold launch).
   var savedStatus by rememberSaveable(stateSaver = AppUpdateStatusSaver) {
     mutableStateOf<AppUpdateStatus?>(null)
+  }
+  val savedProcessToken = rememberSaveable { ProcessIdentity.token }
+  val restoredStatus = remember { savedStatus }
+  val resumeGate = remember {
+    ResumeGate.forRestore(restoredStatus, savedProcessToken, ProcessIdentity.token)
   }
   // Created once: changing defaultText or service must not reset an already fetched launch policy.
   val store = remember {
@@ -132,9 +141,7 @@ private fun LaunchingHost(
       scope = scope,
       service = { currentService },
       openUri = { uri -> currentOnOpenUri(Uri.parse(uri.toString())) },
-      initialState = savedStatus
-        ?.let { reducer.reduce(LaunchingState(), LaunchingAction.StatusReceived(it)).state }
-        ?: LaunchingState(),
+      initialState = restoredStatus?.let(reducer::restore) ?: LaunchingState(),
     )
   }
   val state by store.state.collectAsStateWithLifecycle()
@@ -148,7 +155,9 @@ private fun LaunchingHost(
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner, store) {
     val observer = LifecycleEventObserver { _, event ->
-      if (event == Lifecycle.Event.ON_RESUME) store.send(LaunchingAction.FetchRequested)
+      if (event == Lifecycle.Event.ON_RESUME && resumeGate.shouldFetch()) {
+        store.send(LaunchingAction.FetchRequested)
+      }
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

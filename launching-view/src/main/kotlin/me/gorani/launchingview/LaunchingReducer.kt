@@ -44,6 +44,15 @@ internal class LaunchingReducer(
     is BlockingButtonTapped -> LaunchingTransition(state, openUri(action.linkUri))
   }
 
+  /**
+   * State to start from when [status] was restored from saved state after Activity re-creation.
+   *
+   * The blocking screen and content visibility come back; the optional-update and notice dialogs
+   * do not, because the user may already have dismissed them before the configuration change.
+   */
+  fun restore(status: AppUpdateStatus): LaunchingState =
+    apply(LaunchingState(), status).copy(optionalUpdateAlert = null, noticeAlert = null)
+
   private fun requestFetch(state: LaunchingState): LaunchingTransition =
     if (state.isFetching) {
       LaunchingTransition(state.copy(hasPendingFetch = true))
