@@ -188,7 +188,15 @@ GitHub Releases trigger Maven Central publication. The repository requires these
 - `MAVEN_SIGNING_KEY`
 - `MAVEN_SIGNING_PASSWORD`
 
-The release tag must equal `v$(cat VERSION.txt)`.
+The release tag must equal `v$(cat VERSION.txt)`. The workflow checks that all four secrets are present before checking out or building anything, so a missing secret fails at the first step with a clear error instead of after an upload.
+
+### Manual Re-run
+
+The workflow also accepts `workflow_dispatch`, so a failed publication can be retried without creating a new release. A manual run publishes only when the resolved tag equals `v$(cat VERSION.txt)`; the tag comes from the optional `tag` input, or, when that is empty, from the ref the run was started on. Starting the run on a branch therefore fails the version check and publishes nothing. After registering the secrets, republish a tag from `main` with:
+
+```bash
+gh workflow run release.yml -f tag=v0.1.0
+```
 
 ## License
 
