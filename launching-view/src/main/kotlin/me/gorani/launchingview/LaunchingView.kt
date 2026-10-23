@@ -16,6 +16,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import me.gorani.launchingservice.AppUpdateStatus
 import me.gorani.launchingservice.LaunchingServiceClient
 
@@ -136,7 +138,11 @@ private fun LaunchingHost(
     )
   }
   val state by store.state.collectAsStateWithLifecycle()
-  LaunchedEffect(state.appUpdateStatus) { savedStatus = state.appUpdateStatus }
+  // Subscribed to the store directly, not to the lifecycle-gated `state`, so a fetch that finishes
+  // after onStop still updates the saved policy before the process may be killed.
+  LaunchedEffect(store) {
+    store.state.map { it.appUpdateStatus }.distinctUntilChanged().collect { savedStatus = it }
+  }
 
   val lifecycleOwner = LocalLifecycleOwner.current
   DisposableEffect(lifecycleOwner, store) {
