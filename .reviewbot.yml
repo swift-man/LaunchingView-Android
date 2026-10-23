@@ -1,0 +1,33 @@
+version: 1
+
+review:
+  include:
+    - "**/*.kt"
+    - "**/*.kts"
+    - "**/AndroidManifest.xml"
+    - ".github/workflows/*.yml"
+    - "gradle/libs.versions.toml"
+    - "README.md"
+
+  exclude:
+    - ".gradle/**"
+    - ".idea/**"
+    - "**/build/**"
+    - "docs/**"
+    - "CHANGELOG.md"
+    - "gradle/wrapper/gradle-wrapper.jar"
+    - "**/*.png"
+    - "**/*.jpg"
+    - "**/*.jpeg"
+    - "**/*.gif"
+    - "**/*.webp"
+    - "**/*.pdf"
+
+  always_review:
+    - ".reviewbot.yml"
+    - "AGENTS.md"
+    - "README.md"
+    - "settings.gradle.kts"
+    - "build.gradle.kts"
+    - "gradle/libs.versions.toml"
+    - ".github/workflows/deploy-dokka.yml"
