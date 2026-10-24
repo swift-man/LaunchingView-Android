@@ -153,7 +153,8 @@ private fun LaunchingHost(
     val observer = LifecycleEventObserver { _, event ->
       when (event) {
         Lifecycle.Event.ON_RESUME -> if (resumeGate.shouldFetch()) store.send(LaunchingAction.FetchRequested)
-        // Captured at ON_PAUSE because on API < 28 the state is saved before ON_STOP.
+        // ON_PAUSE is the first event that sees isChangingConfigurations; androidx dispatches ON_STOP
+        // before saving on every API level, so any capture up to ON_STOP lands in the saved state.
         Lifecycle.Event.ON_PAUSE -> snapshotState.value = snapshotState.value.copy(
           changingConfigurations = activity?.isChangingConfigurations == true,
         )

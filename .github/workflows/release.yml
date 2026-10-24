@@ -14,6 +14,11 @@ on:
 permissions:
   contents: read
 
+# A published release and a manual run for the same tag publish one at a time.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   publish:
     runs-on: ubuntu-latest
