@@ -455,6 +455,60 @@ class LaunchingReducerTest {
     assertTrue(transition.effects.isEmpty())
   }
 
+  // MARK: restore
+
+  @Test
+  fun `restore keeps an optional update dialog the user had not dismissed`() {
+    val state = reducer.restore(optional, optionalDialogVisible = true, noticeDialogVisible = false)
+
+    assertEquals(
+      reducer.reduce(LaunchingState(), StatusReceived(optional)).state,
+      state,
+    )
+  }
+
+  @Test
+  fun `restore does not reshow a dismissed optional update dialog`() {
+    val state = reducer.restore(optional, optionalDialogVisible = false, noticeDialogVisible = false)
+
+    assertEquals(LaunchingState(appUpdateStatus = optional, displayContentView = true), state)
+  }
+
+  @Test
+  fun `restore keeps a notice dialog the user had not dismissed`() {
+    val state = reducer.restore(notice, optionalDialogVisible = false, noticeDialogVisible = true)
+
+    assertEquals(
+      reducer.reduce(LaunchingState(), StatusReceived(notice)).state,
+      state,
+    )
+  }
+
+  @Test
+  fun `restore does not reshow a dismissed notice dialog`() {
+    val state = reducer.restore(notice, optionalDialogVisible = false, noticeDialogVisible = false)
+
+    assertEquals(LaunchingState(appUpdateStatus = notice, displayContentView = true), state)
+  }
+
+  @Test
+  fun `restore brings back the blocking screen for forced update and terminating notice`() {
+    listOf(forced, terminatingNotice).forEach { status ->
+      val state = reducer.restore(status, optionalDialogVisible = true, noticeDialogVisible = true)
+
+      assertEquals("status=$status", reducer.reduce(LaunchingState(), StatusReceived(status)).state, state)
+      assertFalse("status=$status", state.displayContentView)
+    }
+  }
+
+  @Test
+  fun `restore of a valid status shows content`() {
+    assertEquals(
+      LaunchingState(appUpdateStatus = AppUpdateStatus.Valid, displayContentView = true),
+      reducer.restore(AppUpdateStatus.Valid, optionalDialogVisible = true, noticeDialogVisible = true),
+    )
+  }
+
   // MARK: Fixtures
 
   private fun blockingAlert() = LaunchingState.BlockingAlert("Blocked", "Message", "update", forceUri)

@@ -15,7 +15,8 @@ import me.gorani.launchingservice.LaunchingServiceClient
  * Runs [LaunchingReducer] transitions and executes the returned effects.
  *
  * [send] must be called from a single thread (the main thread in Compose).
- * [initialState] lets a host restore an already fetched policy, see [AppUpdateStatusSaver].
+ * [initialState] lets a host restore an already fetched policy and [onStateChanged] is invoked
+ * synchronously after every transition, see [LaunchingSnapshot].
  */
 internal class LaunchingStore(
   private val reducer: LaunchingReducer,
@@ -23,6 +24,7 @@ internal class LaunchingStore(
   private val service: () -> LaunchingServiceClient,
   private val openUri: (URI) -> Unit,
   initialState: LaunchingState = LaunchingState(),
+  private val onStateChanged: (LaunchingState) -> Unit = {},
 ) {
   private val mutableState = MutableStateFlow(initialState)
   val state: StateFlow<LaunchingState> = mutableState.asStateFlow()
@@ -30,6 +32,8 @@ internal class LaunchingStore(
   fun send(action: LaunchingAction) {
     val transition = reducer.reduce(mutableState.value, action)
     mutableState.value = transition.state
+    // Synchronous so saved instance state never lags behind the store (see LaunchingSnapshot).
+    onStateChanged(transition.state)
     transition.effects.forEach(::perform)
   }
 

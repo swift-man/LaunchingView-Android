@@ -124,14 +124,14 @@ LaunchingView(
 4. `ForcedUpdateRequired` 이면 본 화면 대신 차단 화면을 보여 줍니다. 버튼 하나가 `doneUri` 를 열고, 뒤로가기로는 닫히지 않습니다.
 5. `Notice` 이면 `terminateOnDismiss` 가 `true` 일 때 차단 화면을, 아니면 본 화면 위에 공지 다이얼로그를 띄웁니다. 공지 다이얼로그를 닫을 때 `doneUri` 가 있으면 엽니다.
 6. 조회가 예외로 끝나면 에러 다이얼로그를 띄우고, 닫으면 다시 조회합니다.
-7. 앱이 백그라운드에서 돌아와 다시 `ON_RESUME` 을 받으면 최신 정책을 다시 확인합니다.
+7. 앱이 백그라운드에서 돌아와 다시 `ON_RESUME` 을 받으면 최신 정책을 다시 확인합니다. 회전처럼 포그라운드의 Activity 만 재생성된 경우에는 마지막 정책과 열려 있던 다이얼로그를 복원하고 다시 조회하지 않습니다. 백그라운드에 있는 동안 생긴 구성 변경으로 복귀 시 재생성되거나 프로세스가 종료됐다 복원되면 다시 조회합니다.
 
 ## iOS 와의 대응
 
 | iOS (`Launching.swift`) | Android | 비고 |
 | --- | --- | --- |
 | `launchScreen.onAppear` → `fetchAppUpdateStatus` | `Lifecycle.Event.ON_RESUME` → `FetchRequested` | 옵저버 등록 시점에 이미 RESUMED 이면 즉시 한 번 전달되므로 첫 표시 조회를 겸함 |
-| `scenePhase == .active` 재조회 | 이후의 모든 `ON_RESUME` | 동일 |
+| `scenePhase == .active` 재조회 | 이후의 `ON_RESUME` | 포그라운드의 Activity 가 회전·앱 내 테마 변경으로 재생성된 직후의 합성 `ON_RESUME` 만 건너뜀(진행 중·대기·실패한 조회가 없을 때). 백그라운드에서 멈춘 Activity 가 복귀하며 재생성되거나(시스템 언어·다크 모드 변경, 활동 유지 안 함) 프로세스 종료 후 복원되면 재조회 |
 | `isFetching` 중 재요청 → `hasPendingFetch` | 동일 | 현재 조회가 끝난 뒤 한 번 더 조회 |
 | effect 취소 → `fetchAppUpdateStatusCancelled` | 코루틴 취소 → `FetchCancelled` | 알림 없이 정리. 서비스가 던진 `CancellationException` 은 코루틴이 살아 있으면 조회 실패로 처리 |
 | `.valid` | `Valid` | 본문 표시, 모든 알림 제거 |
@@ -146,7 +146,7 @@ LaunchingView(
 | 에러 alert 의 시스템 "OK" 버튼 | `LaunchingAlertDefaultText.FetchError.done` | Android 에는 시스템 기본 버튼이 없어 문구를 노출 |
 | `@Dependency(\.openURL)` | `onOpenUri: (Uri) -> Unit` | 기본값은 `ACTION_VIEW` 인텐트 |
 | `isFinished: Binding<Bool>` | `isFinished: Boolean` | Compose 상태를 그대로 넘김 |
-| SwiftUI `@State` (구성 변경 없음) | `rememberSaveable` 로 마지막 `AppUpdateStatus` 복원 | 회전·언어·다크 모드 전환으로 Activity 가 재생성돼도 차단 화면과 본문이 유지되고, 이어서 `ON_RESUME` 재조회. 저장은 `onSaveInstanceState` 시점이므로 그 뒤에 도착한 정책은 프로세스 종료 시 유실되고 재조회로 교정됨 |
+| SwiftUI `@State` (구성 변경 없음) | `rememberSaveable` 로 마지막 정책·열린 다이얼로그·재조회 필요 여부 복원 | 차단 화면과 본문은 항상 복원되고, 닫지 않은 다이얼로그는 유지되며 닫은 다이얼로그는 다시 뜨지 않음. 재생성이 진행 중이던 조회를 취소했거나 오류 다이얼로그가 떠 있었으면 복원 직후 재조회. 저장은 `onSaveInstanceState` 시점이므로 그 뒤에 도착한 정책은 다음 포그라운드 복귀 때 교정됨 |
 | `LaunchingAlertDefaultText.Notice.cancel` | 없음 | 공지 다이얼로그와 차단 화면 모두 버튼이 하나뿐이라 노출하지 않음 |
 
 Remote Config 키와 판정 규칙은 [LaunchingService Android README](https://github.com/swift-man/LaunchingService-Android#remote-config) 를 참고하세요.
@@ -188,7 +188,15 @@ GitHub Releases trigger Maven Central publication. The repository requires these
 - `MAVEN_SIGNING_KEY`
 - `MAVEN_SIGNING_PASSWORD`
 
-The release tag must equal `v$(cat VERSION.txt)`.
+The release tag must equal `v$(cat VERSION.txt)`. The workflow checks that all four secrets are present before checking out or building anything, so a missing secret fails at the first step with a clear error instead of after an upload.
+
+### Manual Re-run
+
+The workflow also accepts `workflow_dispatch`, so a failed publication can be retried without creating a new release. A manual run publishes only when the resolved tag equals `v$(cat VERSION.txt)`; the tag comes from the optional `tag` input, or, when that is empty, from the ref the run was started on. Starting the run on a branch therefore fails the version check and publishes nothing. After registering the secrets, republish a tag from `main` with:
+
+```bash
+gh workflow run release.yml -f tag=v0.1.0
+```
 
 ## License
 

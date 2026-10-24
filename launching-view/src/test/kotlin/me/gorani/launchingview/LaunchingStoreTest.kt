@@ -158,6 +158,27 @@ class LaunchingStoreTest {
   }
 
   @Test
+  fun `state listener is invoked synchronously after every transition`() = runTest {
+    val seen = mutableListOf<LaunchingState>()
+    val store = LaunchingStore(
+      reducer = reducer,
+      scope = this,
+      service = { LaunchingServiceClient { AppUpdateStatus.Valid } },
+      openUri = {},
+      onStateChanged = seen::add,
+    )
+
+    store.send(LaunchingAction.FetchRequested)
+    assertEquals(listOf(LaunchingState(isFetching = true)), seen)
+
+    advanceUntilIdle()
+    assertEquals(
+      LaunchingState(appUpdateStatus = AppUpdateStatus.Valid, displayContentView = true),
+      seen.last(),
+    )
+  }
+
+  @Test
   fun `open uri effects reach the opener`() = runTest {
     val opened = mutableListOf<URI>()
     val uri = URI("https://example.com/force")
