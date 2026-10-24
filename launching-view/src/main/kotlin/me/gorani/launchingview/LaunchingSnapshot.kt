@@ -13,7 +13,7 @@ import me.gorani.launchingservice.AppUpdateStatus
  * - [refetchNeeded] records a fetch that was in flight, queued, or had failed when the state was
  *   saved. Re-creation cancels that fetch, so the restored host must fetch again.
  * - [changingConfigurations] is `Activity.isChangingConfigurations` captured at `ON_PAUSE`, the
- *   last callback before the state is saved on every API level. It is `true` only for a
+ *   first event that sees it, before the state is saved on every API level. It is `true` only for a
  *   re-creation that replaces a foreground Activity (rotation, in-app theme change); an Activity
  *   that was stopped in the background, destroyed to save memory, or lost to process death leaves
  *   `false`, so returning to it fetches like a foreground return on iOS.
