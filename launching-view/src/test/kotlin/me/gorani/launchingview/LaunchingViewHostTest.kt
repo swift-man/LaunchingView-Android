@@ -4,6 +4,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.LocalSaveableStateRegistry
+import androidx.compose.runtime.saveable.SaveableStateRegistry
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -18,6 +22,7 @@ import me.gorani.launchingservice.LaunchingServiceClient
 import me.gorani.launchingservice.NoticeAlert
 import me.gorani.launchingservice.UpdateAlert
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -212,6 +217,32 @@ class LaunchingViewHostTest {
     assertEquals(2, service.fetchCount.get())
   }
 
+  // Formats an earlier release wrote under the same key with AppUpdateStatusSaver. rememberSaveable
+  // wraps the saver in a MutableState, so a null from the inner restore would surface as a null
+  // snapshot instead of falling back to the initial value.
+  @Test
+  fun `an empty saved value from an earlier version starts fresh instead of crashing`() {
+    assertStartsFreshFrom(emptyList())
+  }
+
+  @Test
+  fun `a five-entry saved policy from an earlier version starts fresh instead of crashing`() {
+    assertStartsFreshFrom(listOf("forced", "Force update", "Please update now", "https://example.com/force", false))
+  }
+
+  private fun assertStartsFreshFrom(stale: List<Any>) {
+    val service = CountingService { AppUpdateStatus.Valid }
+    val registry = StaleSaveableStateRegistry(stale)
+
+    composeRule.setContent {
+      CompositionLocalProvider(LocalSaveableStateRegistry provides registry) { launchingView(service) }
+    }
+
+    composeRule.waitUntil { service.fetchCount.get() == 1 }
+    composeRule.onNodeWithText("content").assertIsDisplayed()
+    assertTrue("the host must consume the stale value", registry.consumedKeys.isNotEmpty())
+  }
+
   @Composable
   private fun launchingView(service: LaunchingServiceClient) {
     LaunchingView(content = { Text("content") }, launchScreen = { Text("launch") }, service = service)
@@ -228,5 +259,24 @@ class LaunchingViewHostTest {
     val fetchCount = AtomicInteger()
 
     override suspend fun fetchAppUpdateStatus(): AppUpdateStatus = status(fetchCount.incrementAndGet())
+  }
+
+  /** Answers every restore with [stale], wrapped the way `rememberSaveable(stateSaver = ...)` saves it. */
+  private class StaleSaveableStateRegistry(private val stale: List<Any>) : SaveableStateRegistry {
+    val consumedKeys = mutableListOf<String>()
+
+    override fun canBeSaved(value: Any): Boolean = true
+
+    override fun consumeRestored(key: String): Any? {
+      consumedKeys += key
+      return mutableStateOf<Any?>(stale)
+    }
+
+    override fun registerProvider(key: String, valueProvider: () -> Any?): SaveableStateRegistry.Entry =
+      object : SaveableStateRegistry.Entry {
+        override fun unregister() = Unit
+      }
+
+    override fun performSave(): Map<String, List<Any?>> = emptyMap()
   }
 }

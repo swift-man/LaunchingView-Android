@@ -56,7 +56,12 @@ internal data class LaunchingSnapshot(
   }
 }
 
+/**
+ * Never restores `null`: `rememberSaveable(stateSaver = ...)` wraps this saver in a `MutableState`
+ * and does not fall back to its initial value when the inner restore returns `null`, so values from
+ * a different version restore a fresh [LaunchingSnapshot] that fetches like a first display.
+ */
 internal val LaunchingSnapshotSaver: Saver<LaunchingSnapshot, Any> = listSaver(
   save = { snapshot -> snapshot.toSavedValues() },
-  restore = { values -> LaunchingSnapshot.fromSavedValues(values) },
+  restore = { values -> LaunchingSnapshot.fromSavedValues(values) ?: LaunchingSnapshot() },
 )
